@@ -37,10 +37,6 @@ It will fetch 00-index.tar.gz from Hackage and unpack it into relevant directory
 >   packages <- getArgs
 >   when (null packages) (putStrLn "Supply one or more package name to test on." >> exitFailure)
 >   mapM_ runPackage packages
-> {-
->   cont <- dirsFromDirectoryContents "."
->   mapM_ runDir cont
->  -}
 
 > exitWhenFail :: (IO ExitCode -> IO ())
 > exitWhenFail ecM = do
@@ -57,11 +53,19 @@ It will fetch 00-index.tar.gz from Hackage and unpack it into relevant directory
 > (<->) :: String -> String -> String
 > pre <-> suf = pre ++ "-" ++ suf
 
+> withCurrentDirectory :: FilePath -> IO a -> IO a
 > withCurrentDirectory dir act = do
 >   old <- getCurrentDirectory
 >   setCurrentDirectory dir
->   act
+>   x <- act
 >   setCurrentDirectory old
+>   return x
+
+> ignore :: (Monad m) => m a -> m ()
+> ignore f = f >> return ()
+
+> sortComparing :: (Ord b) => (a -> b) -> [a] -> [a]
+> sortComparing f xs = map snd $ sortBy (comparing fst) $ zip (map f xs) xs
 
 > runPackage package = withCurrentDirectory (packageCache </> package) $ do
 >   let isVersionLike "." = False
@@ -71,13 +75,14 @@ It will fetch 00-index.tar.gz from Hackage and unpack it into relevant directory
 >       checkDownloadVersion :: FilePath -> IO ()
 >       checkDownloadVersion ver = let packVer = package <-> ver in
 >                                  unlessM (doesDirectoryExist (ver </> packVer))
->                                          (exitWhenFail (system $ printf "cabal unpack %s -d %s" packVer ver))
+> --                                       (exitWhenFail (system $ printf "cabal unpack %s -d %s" packVer ver))
+>                                          (ignore (system $ printf "cabal unpack %s -d %s" packVer ver))
 >       runPackageVT older newer = do
 >                        let aux ver = ver </> (package <-> ver) </> (package <.> "cabal")
 >                        putStrLn $ printf ">>> Testing package-vt on %s and %s" (package <-> older) (package <-> newer)
 >                        rawSystem "package-vt" [aux older, aux newer] >>= print
 >                        putStrLn ""
->       sortVersions vs = map snd . sort . map (\v -> ((readP_to_S parseVersion v),v)) $ vs
+>       sortVersions vs = sortComparing (readP_to_S parseVersion) vs
 >   
 >   versions <- sortVersions . filter isVersionLike <$> (filterM doesDirectoryExist =<< getDirectoryContents ".")
 >   putStrLn $ printf "%s => %s" package (show $ (versions :: [FilePath]))

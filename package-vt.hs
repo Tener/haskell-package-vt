@@ -50,7 +50,7 @@ main = do
                             ext -> error $ printf "Bad file extension: %s" (show ext)
 
   r <- case files of
-    [HSFile f1, HSFile f2] -> catMaybes . (:[]) <$> compareHSFiles f1 f2
+    [HSFile f1, HSFile f2] -> catMaybes . (:[]) <$> compareHSFiles [] f1 f2
     [CabalFile c1, CabalFile c2] -> compareCabalFiles c1 c2
     _ -> error $ printf "Unsupported filetype combination: %s" (show files)
   
@@ -88,8 +88,10 @@ compareCabalFiles fOld fNew = do
       readParse fn = do
         cabal <- readPackageDescription Verbosity.verbose fn
         let getExportedModules = exposedModules . condTreeData . fromJust . condLibrary 
+            maybeHead x [] = x
+            maybeHead _ (x:xs) = x
             -- TODO: actually use multiple dirs, not just one.
-            getSourceDir = head . hsSourceDirs . libBuildInfo . condTreeData . fromJust . condLibrary
+            getSourceDir = maybeHead "." . hsSourceDirs . libBuildInfo . condTreeData . fromJust . condLibrary
             
             modules = map ModuleName.toFilePath . sort . getExportedModules $ cabal
             sourceDir = getSourceDir $ cabal
@@ -104,22 +106,24 @@ compareCabalFiles fOld fNew = do
                                modsNew
                                
 
-  hsDiffs <- sequence [ compareHSFiles (dropFileName fOld </> dirO </> f <.> "hs") 
+  hsDiffs <- sequence [ compareHSFiles (glasgowExts ++ [CPP,MultiParamTypeClasses])
+                                       (dropFileName fOld </> dirO </> f <.> "hs") 
                                        (dropFileName fNew </> dirN </> f <.> "hs") | 
                                        f <- concat . map snd . filter isBoth $ diff]
   return (sort . catMaybes $ vc : hsDiffs)
 
 -- | Compare to .hs files. Return any changes found. 
 --   TODO: consider using language extensions declared in .cabal file.
-compareHSFiles :: FilePath -> FilePath -> IO (Maybe VersionChange)
-compareHSFiles fOldPath fNewPath = do
-  let readAndParse fn = fromParseResult <$> parseFile fn
+compareHSFiles :: [Extension] -> FilePath -> FilePath -> IO (Maybe VersionChange)
+compareHSFiles exts fOldPath fNewPath = do
+  let readAndParse fn = fromParseResult <$> parseFileWithExts exts fn
   fOld@(Module srcLoc1 modName1 optionPragmas1 warningText1 exportSpec1 importDecl1 decl1) <- readAndParse fOldPath
   fNew@(Module srcLoc2 modName2 optionPragmas2 warningText2 exportSpec2 importDecl2 decl2) <- readAndParse fNewPath
 
   let info1 = "One or more entity removed/renamed from module " ++ show modName1
       info2 = "Entity added to module " ++ show modName1
-      (diff,_) = diffGetVC info1 info2
+      diff = if (exportSpec1 == Nothing) && (exportSpec2 == Nothing) then Nothing else 
+                    fst $ diffGetVC info1 info2
                            (fromMaybe (error "exportSpec1 empty") exportSpec1)
                            (fromMaybe (error "exportSpec2 empty") exportSpec2)
 
