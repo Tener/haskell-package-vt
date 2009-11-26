@@ -104,7 +104,9 @@ compareCabalFiles fOld fNew = do
                                modsNew
                                
 
-  hsDiffs <- sequence [ compareHSFiles (dirO </> f) (dirN </> f) | f <- concat . map snd . filter isBoth $ diff]
+  hsDiffs <- sequence [ compareHSFiles (dropFileName fOld </> dirO </> f <.> "hs") 
+                                       (dropFileName fNew </> dirN </> f <.> "hs") | 
+                                       f <- concat . map snd . filter isBoth $ diff]
   return (sort . catMaybes $ vc : hsDiffs)
 
 -- | Compare to .hs files. Return any changes found. 
