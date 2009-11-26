@@ -87,11 +87,13 @@ compareCabalFiles fOld fNew = do
   let readParse :: FilePath -> IO (FilePath,[FilePath])
       readParse fn = do
         cabal <- readPackageDescription Verbosity.verbose fn
-        let getExportedModules = exposedModules . condTreeData . fromJust . condLibrary 
+        let getExportedModules = exposedModules . getLib
+            getLib = condTreeData . fromMaybe (error "No library found") . condLibrary
             maybeHead x [] = x
             maybeHead _ (x:xs) = x
             -- TODO: actually use multiple dirs, not just one.
-            getSourceDir = maybeHead "." . hsSourceDirs . libBuildInfo . condTreeData . fromJust . condLibrary
+            getSourceDir = maybeHead "." . hsSourceDirs . libBuildInfo . getLib
+                           
             
             modules = map ModuleName.toFilePath . sort . getExportedModules $ cabal
             sourceDir = getSourceDir $ cabal
@@ -113,7 +115,6 @@ compareCabalFiles fOld fNew = do
   return (sort . catMaybes $ vc : hsDiffs)
 
 -- | Compare to .hs files. Return any changes found. 
---   TODO: consider using language extensions declared in .cabal file.
 compareHSFiles :: [Extension] -> FilePath -> FilePath -> IO (Maybe VersionChange)
 compareHSFiles exts fOldPath fNewPath = do
   let readAndParse fn = fromParseResult <$> parseFileWithExts exts fn
