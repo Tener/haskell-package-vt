@@ -93,7 +93,7 @@ diffGetVC info1 info2 xs ys =
 
 -- | nubOrd
 nubOrd :: (Ord a) => [a] -> [a]
-nubOrd xs = map head . group . sort $ xs
+nubOrd = map head . group . sort 
 
 -- | Compare two package descriptions from 
 compareCabalFiles :: FilePath -> FilePath -> IO [VersionChange]
@@ -119,7 +119,7 @@ compareCabalFiles fOld fNew = do
   hsDiffs <- sequence [ compareHSFiles (glasgowExts ++ [CPP,MultiParamTypeClasses])
                                        (dropFileName fOld </> dirO </> f <.> "hs") 
                                        (dropFileName fNew </> dirN </> f <.> "hs") | 
-                                       f <- concat . map snd . filter isBoth $ diff]
+                                       f <- concatMap snd . filter isBoth $ diff]
   return (sort . catMaybes $ vc : hsDiffs)
 
 -- | Compare to .hs files. Return any changes found. 
