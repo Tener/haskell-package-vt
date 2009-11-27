@@ -1,26 +1,26 @@
 name:                package-vt
-version:             0.1.3.2
+version:             0.1.3.3
 synopsis:            Haskell Package Versioning Tool
 description:         
-		     This program is meant as a tool for suggesting version change of libraries.
-		     It tries to match official Package Versioning Policy.
-		     .
-		     See <http://www.haskell.org/haskellwiki/Package_versioning_policy> for details.
-		     .
-		     This version works by inspecting new/removed exported modules or entities.
-		     It doesn't currently check the types of exported elements.
-		     .
-		     Typical invocation:
-		     .
-		     > package-vt module-ver-1.hs module-ver-2.hs 
-		     .
-		     If you unpack modules with @cabal unpack@ you can use the following form:
-		     .
-		     > # unpack modules
-		     > cabal unpack package-1
-		     > cabal unpack package-2
-		     > package-vt module-1/module.cabal module-2/module.cabal
-		     
+                     This program is meant as a tool for suggesting version change of libraries.
+                     It tries to match official Package Versioning Policy.
+                     .
+                     See <http://www.haskell.org/haskellwiki/Package_versioning_policy> for details.
+                     .
+                     This version works by inspecting new/removed exported modules or entities.
+                     It doesn't currently check the types of exported elements.
+                     .
+                     Typical invocation:
+                     .
+                     > package-vt module-ver-1.hs module-ver-2.hs 
+                     .
+                     If you unpack modules with @cabal unpack@ you can use the following form:
+                     .
+                     > # unpack modules
+                     > cabal unpack package-1
+                     > cabal unpack package-2
+                     > package-vt module-1/module.cabal module-2/module.cabal
+
 category:            Development
 license:             BSD3
 license-file:        LICENSE
