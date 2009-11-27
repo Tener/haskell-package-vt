@@ -32,6 +32,7 @@ data FileType = HSFile String
               | CabalFile String
                      deriving (Ord,Eq,Show,Read)
 
+-- | Custom datatype for parse exceptions
 data ParseError = ParseError String deriving (Ord,Eq,Data,Show,Read,Typeable)
 instance Exception ParseError
 
@@ -122,7 +123,7 @@ compareCabalFiles fOld fNew = do
                                        f <- concatMap snd . filter isBoth $ diff]
   return (sort . catMaybes $ vc : hsDiffs)
 
--- | Compare to .hs files. Return any changes found. 
+-- | Compare two .[l]hs files. Return any changes found. 
 compareHSFiles :: [Extension] -> FilePath -> FilePath -> IO (Maybe VersionChange)
 compareHSFiles exts fOldPath fNewPath = do
   let onIOError :: IOException -> IO (Maybe VersionChange)
