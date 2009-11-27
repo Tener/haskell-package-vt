@@ -1,5 +1,5 @@
 name:                package-vt
-version:             0.1.2.2
+version:             0.1.3
 synopsis:            Haskell Package Versioning Tool
 description:         
 		     This program is meant as a tool for suggesting version change of libraries.
