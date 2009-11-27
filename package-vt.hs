@@ -1,10 +1,14 @@
+{-# LANGUAGE ScopedTypeVariables, DeriveDataTypeable #-} 
 module Main ( main ) where
 
 import Control.Applicative ( (<$>) )
+import Control.Exception
 import Data.Algorithm.Diff ( getGroupedDiff, DI(..) )
 import Data.Maybe ( catMaybes, fromJust, fromMaybe )
 import Data.Monoid
-import Data.List ( sort )
+import Data.Data
+import Data.Typeable
+import Data.List ( sort, group )
 import Text.Printf ( printf )
 import Language.Haskell.Exts -- too many things to list
 import System.Environment ( getArgs )
@@ -13,7 +17,8 @@ import System.FilePath
 -- Cabal stuff
 
 import Distribution.PackageDescription
-import Distribution.PackageDescription.Parse
+import Distribution.PackageDescription.Parse ( readPackageDescription )
+import Distribution.PackageDescription.Configuration
 import qualified Distribution.Verbosity as Verbosity
 import qualified Distribution.ModuleName as ModuleName
 
@@ -26,6 +31,9 @@ data VersionChange = NoChange
 data FileType = HSFile String
               | CabalFile String
                      deriving (Ord,Eq,Show,Read)
+
+data ParseError = ParseError String deriving (Ord,Eq,Data,Show,Read,Typeable)
+instance Exception ParseError
 
 -- | Monoid instance for VersionChange describes which change has stronger priority.
 instance Monoid VersionChange where
@@ -54,17 +62,19 @@ main = do
     [CabalFile c1, CabalFile c2] -> compareCabalFiles c1 c2
     _ -> error $ printf "Unsupported filetype combination: %s" (show files)
   
-  putStrLn . concatMap pprintVC $ r
+  putStrLn "Single changes:"
+  putStrLn . concatMap pprintVC $ sort r
+  putStrLn "Biggest change comes from:"
   putStrLn . pprintVC . mconcat $ r
 
 -- | pretty print 'VersionChange'
 
 pprintVC :: VersionChange -> String
 pprintVC NoChange = "NoChange : no changes suggested."
-pprintVC (ChangeABC info details) = printf "ChangeABC : %s\n\t%s" info details
-pprintVC (ChangeAB info details) = printf "ChangeAB : %s\n\t%s" info details
+pprintVC (ChangeABC info details) = printf "ChangeABC : %s\n---\n%s\n---" info details
+pprintVC (ChangeAB info details) = printf "ChangeAB : %s\n---\n%s\n---" info details
 
---  Predicates for matching with certain diff cases
+-- |  Predicates for matching with certain diff cases
 isFirst, isSecond, isBoth :: (DI,a) -> Bool
 isFirst  = (==F) . fst
 isSecond = (==S) . fst
@@ -81,23 +91,21 @@ diffGetVC info1 info2 xs ys =
     in
       (r,diff)
 
+-- | nubOrd
+nubOrd :: (Ord a) => [a] -> [a]
+nubOrd xs = map head . group . sort $ xs
+
 -- | Compare two package descriptions from 
 compareCabalFiles :: FilePath -> FilePath -> IO [VersionChange]
 compareCabalFiles fOld fNew = do
   let readParse :: FilePath -> IO (FilePath,[FilePath])
       readParse fn = do
-        cabal <- readPackageDescription Verbosity.verbose fn
-        let getExportedModules = exposedModules . getLib
-            getLib = condTreeData . fromMaybe (error "No library found") . condLibrary
-            maybeHead x [] = x
-            maybeHead _ (x:xs) = x
-            -- TODO: actually use multiple dirs, not just one.
-            getSourceDir = maybeHead "." . hsSourceDirs . libBuildInfo . getLib
-                           
-            
-            modules = map ModuleName.toFilePath . sort . getExportedModules $ cabal
-            sourceDir = getSourceDir $ cabal
-        return (sourceDir,modules)
+        cabal <- flattenPackageDescription <$> readPackageDescription Verbosity.normal fn
+        let --
+            modules = map ModuleName.toFilePath . sort . libModules $ cabal
+            sourceDirs = (nubOrd . sort . concatMap hsSourceDirs . allBuildInfo $ cabal) ++ ["."]
+            -- XXX: use multiple source dirs
+        return (head sourceDirs,modules)
 
   (dirO, modsOld) <- readParse fOld
   (dirN, modsNew) <- readParse fNew
@@ -117,15 +125,32 @@ compareCabalFiles fOld fNew = do
 -- | Compare to .hs files. Return any changes found. 
 compareHSFiles :: [Extension] -> FilePath -> FilePath -> IO (Maybe VersionChange)
 compareHSFiles exts fOldPath fNewPath = do
-  let readAndParse fn = fromParseResult <$> parseFileWithExts exts fn
-  fOld@(Module srcLoc1 modName1 optionPragmas1 warningText1 exportSpec1 importDecl1 decl1) <- readAndParse fOldPath
-  fNew@(Module srcLoc2 modName2 optionPragmas2 warningText2 exportSpec2 importDecl2 decl2) <- readAndParse fNewPath
+  let onIOError :: IOException -> IO (Maybe VersionChange)
+      onIOError e = do
+        putStrLn (printf "IO Exception: %s" (show (e :: IOException)))
+        putStrLn (printf "Skipping modules %s, %s" (show fOldPath) (show fNewPath))
+        return Nothing
 
-  let info1 = "One or more entity removed/renamed from module " ++ show modName1
-      info2 = "Entity added to module " ++ show modName1
-      diff = if (exportSpec1 == Nothing) && (exportSpec2 == Nothing) then Nothing else 
-                    fst $ diffGetVC info1 info2
-                           (fromMaybe (error "exportSpec1 empty") exportSpec1)
-                           (fromMaybe (error "exportSpec2 empty") exportSpec2)
-
-  return diff
+      onParseError :: ParseError -> IO (Maybe VersionChange)
+      onParseError (ParseError str) = do
+        putStrLn str
+        return Nothing
+  handle onParseError $
+   handle onIOError $  
+--  handle (\NonTermination -> error "Non termination") $
+    do
+     let fromParseResult :: ((ParseResult a) -> a) -> (ParseResult a) -> a
+         fromParseResult onErr (ParseOk a) = a
+         fromParseResult onErr err@(ParseFailed _ _) = onErr err
+         readAndParse fn = fromParseResult (\(ParseFailed src err) -> throw (ParseError (err ++ " : " ++ show src)))  <$> parseFileWithExts exts fn
+     fOld@(Module srcLoc1 modName1 optionPragmas1 warningText1 exportSpec1 importDecl1 decl1) <- readAndParse fOldPath
+     fNew@(Module srcLoc2 modName2 optionPragmas2 warningText2 exportSpec2 importDecl2 decl2) <- readAndParse fNewPath
+   
+     let info1 = "One or more entity removed/renamed from module " ++ show modName1
+         info2 = "Entity added to module " ++ show modName1
+         diff = if (exportSpec1 == Nothing) && (exportSpec2 == Nothing) then Nothing else 
+                       fst $ diffGetVC info1 info2
+                              (fromMaybe (error "exportSpec1 empty") exportSpec1)
+                              (fromMaybe (error "exportSpec2 empty") exportSpec2)
+   
+     return diff

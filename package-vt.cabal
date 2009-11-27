@@ -15,4 +15,5 @@ main-is:             package-vt.hs
 build-depends:       Diff >= 0.1.2 && < 0.1.3, 
                      haskell-src-exts >= 1.3.0 && < 1.3.1,
 		     filepath >= 1.1.0 && < 1.2.0,
-		     Cabal >= 1.6.0 && < 1.7
+		     Cabal >= 1.6.0 && < 1.7,
+		     base == 4.1.0.*
